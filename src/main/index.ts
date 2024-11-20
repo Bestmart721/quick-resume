@@ -148,9 +148,8 @@ const openai = new OpenAI({
 })
 
 const generateResume = async (application, response?) => {
-  
+
   applications.push(application)
-  console.log('applications', applications)
   mainWindow.webContents.send('message', {
     id: application.id + '-selected',
     text: 'Selected : ' + application.jobDescription,
@@ -212,10 +211,10 @@ const generateResume = async (application, response?) => {
     mainWindow.webContents.send('message', {
       id: id + '-same-company',
       text: 'Conflict : ' + resumeData.companyName + ' / ' + resumeData.roleTitle,
-      type: 'same-company-warning'
+      type: 'same-company-warning' + (response ? '-remote' : '')
     })
     if (response) {
-      response.setHeader('')
+      response.setHeader('company-name', resumeData.companyName)
       response.status(409).send({
         error: 'Conflict',
         message: `A resume for ${resumeData.companyName} already exists.`,
@@ -426,6 +425,20 @@ const port = 3000;
 
 appExpress.post('/generate', (req, res) => {
   generateResume(req.body, res)
+})
+
+appExpress.get('/proceed', (req, res) => {
+  const { id } = req.query
+  const application = applications.find((app) => app.id === id)
+  if (application) {
+    const expectedFileName = formatString(
+      config.outputFilename || '{0}-{1}',
+      application.resume.roleTitle,
+      application.resume.companyName
+    )
+    const newFileName = expectedFileName + '(' + Math.floor(Math.random() * 1000) + ')'
+    exportResume(application.id, application.resume, newFileName, res)
+  }
 })
 
 appExpress.listen(port, () => {

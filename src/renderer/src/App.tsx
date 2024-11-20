@@ -91,7 +91,7 @@ function App(): JSX.Element {
             >
               {log.text}
               {
-                log.type?.includes('same-company') && <div className='confirmProceed'>
+                log.type?.includes('same-company') && !log.type?.includes('-remote') && <div className='confirmProceed'>
                   <button className='btn'
                     onClick={() => {
                       window.electron.ipcRenderer.send('proceed', log.id, true)
