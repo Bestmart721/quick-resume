@@ -89,7 +89,7 @@ function createWindow(): void {
   // HMR for renderer base on electron-vite cli.
   // Load the remote URL for development or the local html file for production.
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(`http://127.0.0.1:5173/`)
+    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'))
   }
@@ -147,7 +147,16 @@ const openai = new OpenAI({
   apiKey: config.openApiKey
 })
 
-const generateResume = async (application) => {
+const generateResume = async (application, response?) => {
+  
+  applications.push(application)
+  console.log('applications', applications)
+  mainWindow.webContents.send('message', {
+    id: application.id + '-selected',
+    text: 'Selected : ' + application.jobDescription,
+    type: 'selected-text'
+  })
+
   const { id, jobDescription } = application
   const startTime = new Date().getTime()
   const completion = await openai.beta.chat.completions.parse({
@@ -205,8 +214,16 @@ const generateResume = async (application) => {
       text: 'Conflict : ' + resumeData.companyName + ' / ' + resumeData.roleTitle,
       type: 'same-company-warning'
     })
+    if (response) {
+      response.setHeader('')
+      response.status(409).send({
+        error: 'Conflict',
+        message: `A resume for ${resumeData.companyName} already exists.`,
+        companyName: resumeData.companyName,
+      })
+    }
   } else {
-    exportResume(id, resumeData, expectedFileName)
+    exportResume(id, resumeData, expectedFileName, response)
     exportJobDescription(jobDescription, expectedFileName)
   }
 }
@@ -234,7 +251,7 @@ const exportJobDescription = async (jobDescription, fileName) => {
   fs.writeFileSync(path.resolve(outputDir, fileName + '.txt'), jobDescription)
 }
 
-const exportResume = async (id, resume, fileName) => {
+const exportResume = async (id, resume, fileName, response?) => {
   try {
     const content = fs.readFileSync('template.docx', 'binary')
     const zip = new PizZip(content)
@@ -271,12 +288,17 @@ const exportResume = async (id, resume, fileName) => {
 
     try {
       fs.writeFileSync(outputPath, buf)
-      openFile(outputPath)
-      // notifier.notify({
-      //   title: 'Resume Generator',
-      //   message: 'Resume generated successfully\n' + resume.roleTitle + ' / ' + resume.companyName,
-      //   icon: LightSuccess
-      // })
+      if (response) {
+        response.setHeader('Content-Disposition', `attachment; filename="${fileName}.docx"`)
+        response.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+        response.setHeader('save-filename', fileName + '.docx')
+
+        const fileStream = fs.createReadStream(outputPath);
+        fileStream.pipe(response);
+      } else {
+        openFile(outputPath)
+      }
+
       mainWindow.webContents.send('message', {
         id: id + '-exported',
         text: 'Exported : ' + resume.roleTitle + ' / ' + resume.companyName,
@@ -293,6 +315,13 @@ const exportResume = async (id, resume, fileName) => {
         text: err instanceof Error ? err.message : 'Unknown error',
         type: 'error'
       })
+
+      if (response) {
+        response.status(500).send({
+          error: 'Internal Server Error',
+          message: err instanceof Error ? err.message : 'Unknown error'
+        })
+      }
     }
   } catch (err) {
     logMessage(err)
@@ -301,6 +330,13 @@ const exportResume = async (id, resume, fileName) => {
       text: err instanceof Error ? err.message : 'Unknown error',
       type: 'error'
     })
+
+    if (response) {
+      response.status(500).send({
+        error: 'Internal Server Error',
+        message: err instanceof Error ? err.message : 'Unknown error'
+      })
+    }
   }
 }
 
@@ -340,13 +376,6 @@ const setupGlobalKeyboardListener = () => {
             jobDescription,
             resume: null
           }
-          applications.push(application)
-          console.log('applications', applications)
-          mainWindow.webContents.send('message', {
-            id: application.id + '-selected',
-            text: 'Selected : ' + jobDescription,
-            type: 'selected-text'
-          })
           generateResume(application)
         })
         .catch((err) => {
@@ -388,3 +417,17 @@ const logMessage = (message) => {
 // require('electron-reload')(__dirname, {
 //   electron: require(`${__dirname}/node_modules/electron`)
 // });
+
+import express from 'express'
+import bodyParser from 'body-parser'
+const appExpress = express()
+appExpress.use(bodyParser.json())
+const port = 3000;
+
+appExpress.post('/generate', (req, res) => {
+  generateResume(req.body, res)
+})
+
+appExpress.listen(port, () => {
+  console.log(`Server running on port ${port}`)
+})
