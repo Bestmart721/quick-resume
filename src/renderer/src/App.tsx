@@ -1,11 +1,12 @@
 import Versions from './components/Versions'
 import { useEffect, useRef, useState } from 'react'
-import { CircleAlertIcon, GripHorizontalIcon, GripVerticalIcon, XIcon } from 'lucide-react'
+import { CircleAlertIcon, GripHorizontalIcon, GripVerticalIcon, MinusIcon, XIcon } from 'lucide-react'
 
 export interface LogType {
   id?: string,
   text: string,
   type?: string,
+  ip?: string
 }
 
 function App(): JSX.Element {
@@ -29,7 +30,8 @@ function App(): JSX.Element {
         const newArray = [...prev, {
           text: arg.text,
           type: arg.type,
-          id: arg.id
+          id: arg.id,
+          ip: arg.ip
         }]
         // return newArray.slice(-20)
         return newArray
@@ -56,6 +58,10 @@ function App(): JSX.Element {
     }
   }
 
+  const minimizeWindow = () => {
+    window.electron.ipcRenderer.send('minimize')
+  }
+
   const confimrClose = (confirm: boolean) => {
     if (confirm) {
       window.close()
@@ -73,6 +79,7 @@ function App(): JSX.Element {
           {generatedCount} (Host)
         </span>
         <GripHorizontalIcon className='move-icon' />
+        <MinusIcon className='minimize-icon' onClick={minimizeWindow} />
         <XIcon className='close-icon' onClick={toggleCloseModal} />
       </div>
       <div className='log-area' ref={logAreaRef}>
@@ -89,6 +96,7 @@ function App(): JSX.Element {
                 })()
               }}
             >
+              {log.ip && <span className='ip'>{log.ip}:</span>}
               {log.text}
               {
                 log.type?.includes('same-company') && !log.type?.includes('-remote') && <div className='confirmProceed'>

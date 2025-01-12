@@ -58,10 +58,8 @@ let mainWindow: BrowserWindow;
 function createWindow(): void {
   // Create the browser window.
   mainWindow = new BrowserWindow({
-    width: 200,
+    width: 240,
     height: 300,
-    minHeight: 300,
-    maxHeight: 300,
     // resizable: false,
     show: false,
     transparent: true,
@@ -73,8 +71,8 @@ function createWindow(): void {
       preload: path.join(__dirname, '../preload/index.js'),
       sandbox: false
     },
-    x: screen.getPrimaryDisplay().workAreaSize.width - 200,
-    y: 200,
+    x: screen.getPrimaryDisplay().workAreaSize.width - 240 - 1,
+    y: 264,
   })
 
   mainWindow.on('ready-to-show', () => {
@@ -102,16 +100,16 @@ app.whenReady().then(() => {
   // Set app user model id for windows
   // electronApp.setAppUserModelId('com.electron')
 
-  const gotTheLock = app.requestSingleInstanceLock()
+  // const gotTheLock = app.requestSingleInstanceLock()
 
-  if (!gotTheLock) {
-    notifier.notify({
-      title: 'Resume Generator',
-      message: 'Another instance of the app is already running.',
-      icon: LightCaution
-    })
-    app.quit()
-  }
+  // if (!gotTheLock) {
+  //   notifier.notify({
+  //     title: 'Resume Generator',
+  //     message: 'Another instance of the app is already running.',
+  //     icon: LightCaution
+  //   })
+  //   app.quit()
+  // }
 
   // notifier.notify({
   //   icon: LightCaution,
@@ -163,8 +161,8 @@ const generateResume = async (application, response?) => {
     model: 'gpt-4o-mini',
     messages: [
       { role: 'system', content: "You are a resume generation expert for tailored job applications." },
+      { role: 'user', content: jobDescription },
       ...(instructions || []).map((instruction) => ({ role: 'user' as const, content: instruction })),
-      { role: 'user', content: jobDescription }
     ],
     response_format: zodResponseFormat(generatedResumeExtracted, 'research_paper_extraction')
   })
@@ -241,6 +239,10 @@ ipcMain.on('proceed', (event, id, proceed) => {
     exportJobDescription(application.jobDescription, newFileName)
   }
 });
+
+ipcMain.on('minimize', () => {
+  mainWindow.minimize()
+})
 
 const exportJobDescription = async (jobDescription, fileName) => {
   const outputDir = config.outputDir
@@ -419,11 +421,27 @@ const logMessage = (message) => {
 
 import express from 'express'
 import bodyParser from 'body-parser'
+import cors from 'cors'
 const appExpress = express()
 appExpress.use(bodyParser.json())
-const port = 3000;
+const port = config.port || 3000;
+
+appExpress.post('/indeed-extension', async (req, res) => {
+  const jobText = 'Job Title: ' + req.body.jobTitle + '\n\n' +
+    'Company Name: ' + req.body.companyName + '\n\n' +
+    'Location: ' + req.body.companyLocation + '\n\n' +
+    'Job Details: ' + req.body.jobDetails + '\n\n' +
+    'Job Description: ' + req.body.jobDescription + '\n\n'
+  await generateResume({ id: uuidv4(), jobDescription: jobText })
+  res.send('Resume generated successfully')
+});
 
 appExpress.post('/generate', (req, res) => {
+  mainWindow.webContents.send('message', {
+    id: uuidv4(),
+    text: 'Bidder IP : ' + req.ip.replace('::ffff:', ''),
+    type: 'info'
+  })
   generateResume(req.body, res)
 })
 
@@ -440,6 +458,44 @@ appExpress.get('/proceed', (req, res) => {
     exportResume(application.id, application.resume, newFileName, res)
   }
 })
+
+appExpress.use(cors())
+
+const companyNames = fs.readdirSync(config.outputDir).map((file) => file.replace('.txt', '').replace(/\(.*\)/g, '').split('-').pop())
+
+appExpress.get('/company-names', (req, res) => {
+  console.log('company-names')
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  mainWindow.webContents.send('message', {
+    id: uuidv4(),
+    text: 'Requested company names: ' + companyNames.length + ' names sent.',
+    type: 'info'
+  })
+
+  companyNames.forEach((companyName) => {
+    res.write(`data: ${companyName}\n\n`);
+  });
+
+  fs.watch(config.outputDir, (eventType, filename) => {
+    if (filename && filename.endsWith('.txt')) {
+      const companyName = filename.split('-').pop().replace('.txt', '').replace(/\(.*\)/g, '');
+
+      if (!companyNames.includes(companyName)) {
+        companyNames.push(companyName)
+        res.write(`data: ${companyName}\n\n`);
+        mainWindow.webContents.send('message', {
+          id: uuidv4(),
+          text: 'New company name found : ' + companyName,
+          type: 'info'
+        })
+      }
+    }
+  });
+});
 
 appExpress.listen(port, () => {
   console.log(`Server running on port ${port}`)
