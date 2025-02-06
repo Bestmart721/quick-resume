@@ -249,7 +249,7 @@ const exportJobDescription = async (jobDescription, fileName) => {
   if (!outputDir) {
     throw new Error('OUTPUT_DIR environment variable is not defined')
   }
-  fs.writeFileSync(path.resolve(outputDir, fileName + '.txt'), jobDescription)
+  fs.writeFileSync(path.resolve(outputDir, 'JD', fileName + '.txt'), jobDescription)
 }
 
 const exportResume = async (id, resume, fileName, response?) => {
@@ -397,16 +397,16 @@ const setupGlobalKeyboardListener = () => {
 }
 
 const openFile = (filePath) => {
-  switch (process.platform) {
-    case 'darwin':
-      exec(`open "${filePath}"`)
-      break
-    case 'win32':
-      exec(`start "" "${filePath}"`, { windowsHide: false })
-      break
-    default:
-      exec(`xdg-open "${filePath}"`)
-  }
+  // switch (process.platform) {
+  //   case 'darwin':
+  //     exec(`open "${filePath}"`)
+  //     break
+  //   case 'win32':
+  //     exec(`start "" "${filePath}"`, { windowsHide: false })
+  //     break
+  //   default:
+  //     exec(`xdg-open "${filePath}"`)
+  // }
 }
 
 const logMessage = (message) => {
