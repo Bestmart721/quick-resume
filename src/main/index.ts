@@ -189,7 +189,7 @@ const generateResume = async (application, response?) => {
     resumeData.roleTitle,
     resumeData.companyName
   )
-  const filenames = fs.readdirSync(outputDir)
+  const filenames = fs.readdirSync(path.resolve(outputDir, 'JD')).filter((file) => file.endsWith('.txt'))
   let sameExists = false
   filenames.forEach((str) => {
     str = str.replace('.txt', '')
@@ -426,11 +426,11 @@ const appExpress = express()
 appExpress.use(bodyParser.json())
 const port = config.port || 3000;
 
-appExpress.post('/indeed-extension', async (req, res) => {
+appExpress.post('/job-apply-extension', async (req, res) => {
   const jobText = 'Job Title: ' + req.body.jobTitle + '\n\n' +
     'Company Name: ' + req.body.companyName + '\n\n' +
-    'Location: ' + req.body.companyLocation + '\n\n' +
     'Job Details: ' + req.body.jobDetails + '\n\n' +
+    'Job Url: ' + req.body.url + '\n\n' +
     'Job Description: ' + req.body.jobDescription + '\n\n'
   await generateResume({ id: uuidv4(), jobDescription: jobText })
   res.send('Resume generated successfully')
@@ -461,7 +461,9 @@ appExpress.get('/proceed', (req, res) => {
 
 appExpress.use(cors())
 
-const companyNames = fs.readdirSync(config.outputDir).map((file) => file.replace('.txt', '').replace(/\(.*\)/g, '').split('-').pop())
+const companyNames = fs.readdirSync(path.resolve(config.outputDir, 'JD')).filter((file) => file.endsWith('.txt'))
+
+  .map((file) => file.replace('.txt', '').replace(/\(.*\)/g, '').split('-').pop())
 
 appExpress.get('/company-names', (req, res) => {
   console.log('company-names')
@@ -480,9 +482,9 @@ appExpress.get('/company-names', (req, res) => {
     res.write(`data: ${companyName}\n\n`);
   });
 
-  fs.watch(config.outputDir, (eventType, filename) => {
+  fs.watch(path.resolve(config.outputDir, 'JD'), (eventType, filename) => {
     if (filename && filename.endsWith('.txt')) {
-      const companyName = filename.split('-').pop().replace('.txt', '').replace(/\(.*\)/g, '');
+      const companyName = filename?.split('-').pop()?.replace('.txt', '').replace(/\(.*\)/g, '');
 
       if (!companyNames.includes(companyName)) {
         companyNames.push(companyName)
