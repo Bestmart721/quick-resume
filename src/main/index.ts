@@ -436,6 +436,8 @@ appExpress.post('/job-apply-extension', async (req, res) => {
   res.send('Resume generated successfully')
 });
 
+appExpress.use(cors())
+
 appExpress.post('/generate', (req, res) => {
   mainWindow.webContents.send('message', {
     id: uuidv4(),
@@ -459,10 +461,7 @@ appExpress.get('/proceed', (req, res) => {
   }
 })
 
-appExpress.use(cors())
-
 const companyNames = fs.readdirSync(path.resolve(config.outputDir, 'JD')).filter((file) => file.endsWith('.txt'))
-
   .map((file) => file.replace('.txt', '').replace(/\(.*\)/g, '').split('-').pop())
 
 appExpress.get('/company-names', (req, res) => {

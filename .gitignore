@@ -6,3 +6,4 @@ out
 config.json
 instructions.txt
 .env
+*.doc*
