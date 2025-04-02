@@ -50,7 +50,11 @@ const generatedResumeExtracted = zod.object({
   ),
   experience_first: zod.array(zod.string()),
   experience_second: zod.array(zod.string()),
-  experience_third: zod.array(zod.string())
+  experience_third: zod.array(zod.string()),
+  salary: zod.string().optional(),
+  fullyRemoteRole: zod.boolean().optional(),
+  clearanceRequired: zod.boolean().optional(),
+  certificationRequired: zod.boolean().optional(),
 })
 
 let mainWindow: BrowserWindow;
@@ -156,16 +160,33 @@ const generateResume = async (application, response?) => {
 
   const { id, jobDescription } = application
   const startTime = new Date().getTime()
-  const completion = await openai.beta.chat.completions.parse({
-    //model: "gpt-4o-2024-08-06",
-    model: 'gpt-4o-mini',
-    messages: [
-      { role: 'system', content: "You are a resume generation expert for tailored job applications." },
-      { role: 'user', content: jobDescription },
-      ...(instructions || []).map((instruction) => ({ role: 'user' as const, content: instruction })),
-    ],
-    response_format: zodResponseFormat(generatedResumeExtracted, 'research_paper_extraction')
-  })
+  let completion
+  try {
+    completion = await openai.beta.chat.completions.parse({
+      //model: "gpt-4o-2024-08-06",
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: "You are a resume generation expert for tailored job applications." },
+        { role: 'user', content: jobDescription },
+        ...(instructions || []).map((instruction) => ({ role: 'user' as const, content: instruction })),
+      ],
+      response_format: zodResponseFormat(generatedResumeExtracted, 'research_paper_extraction')
+    })
+  } catch (err: any) {
+    console.log('Error', err)
+    mainWindow.webContents.send('message', {
+      id: id + '-error',
+      text: 'Error : ' + err.message,
+      type: 'error'
+    })
+    if (response) {
+      response.status(500).send({
+        error: 'Internal Server Error',
+        message: err.message
+      })
+    }
+    return
+  }
   const endTime = new Date().getTime()
   mainWindow.webContents.send('message', {
     id: id + '-generated',
@@ -205,19 +226,23 @@ const generateResume = async (application, response?) => {
     }
   });
 
-  if (sameExists) {
+  console.log('resumeData', resumeData.companyName, resumeData.salary, resumeData.fullyRemoteRole, resumeData.clearanceRequired, resumeData.certificationRequired)
+  const warningText = `${resumeData.companyName} / ${resumeData.roleTitle}
+          <br/>No-Conflict : ${sameExists ? '❌' : '✅'}
+          <br/>Full-Remote : ${resumeData.fullyRemoteRole ? '✅' : '❌'}
+          <br/>No-Clearance : ${resumeData.clearanceRequired ? '❌' : '✅'}
+          <br/>No-Certification : ${resumeData.certificationRequired ? '❌' : '✅'}`
+
+  if (sameExists || !resumeData.fullyRemoteRole || resumeData.clearanceRequired || resumeData.certificationRequired) {
     mainWindow.webContents.send('message', {
-      id: id + '-same-company',
-      text: 'Conflict : ' + resumeData.companyName + ' / ' + resumeData.roleTitle,
-      type: 'same-company-warning' + (response ? '-remote' : '')
+      id: id + '-with-issue',
+      text: warningText,
+      type: 'with-issue-warning' + (response ? '-remote' : '')
     })
     if (response) {
       response.setHeader('company-name', resumeData.companyName)
-      response.status(409).send({
-        error: 'Conflict',
-        message: `A resume for ${resumeData.companyName} already exists.`,
-        companyName: resumeData.companyName,
-      })
+      response.setHeader('warning-text', encodeURIComponent(warningText))
+      response.status(400).send();
     }
   } else {
     exportResume(id, resumeData, expectedFileName, response)
@@ -226,7 +251,7 @@ const generateResume = async (application, response?) => {
 }
 
 ipcMain.on('proceed', (event, id, proceed) => {
-  id = id.replace(/-same-company/g, '')
+  id = id.replace(/-with-issue/g, '')
   const application = applications.find((app) => app.id === id)
   if (application && proceed) {
     const expectedFileName = formatString(
@@ -290,9 +315,13 @@ const exportResume = async (id, resume, fileName, response?) => {
     try {
       fs.writeFileSync(outputPath, buf)
       if (response) {
-        response.setHeader('Content-Disposition', `attachment; filename="${fileName}.docx"`)
+        response.setHeader('Content-Disposition', `attachment; filename = "${fileName}.docx"`)
         response.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
         response.setHeader('save-filename', fileName + '.docx')
+        response.setHeader('salary', resume.salary || '')
+        response.setHeader('fullyRemoteRole', resume.fullyRemoteRole || '')
+        response.setHeader('clearanceRequired', resume.clearanceRequired || '')
+        response.setHeader('certificationRequired', resume.certificationRequired || '')
 
         const fileStream = fs.createReadStream(outputPath);
         fileStream.pipe(response);
@@ -405,18 +434,18 @@ const openFile = (filePath) => {
   //     exec(`start "" "${filePath}"`, { windowsHide: false })
   //     break
   //   default:
-  //     exec(`xdg-open "${filePath}"`)
+  //     exec(`xdg - open "${filePath}"`)
   // }
 }
 
 const logMessage = (message) => {
   const logFilePath = path.join('app.log')
-  const logEntry = `${new Date().toISOString()} - ${message}\n`
+  const logEntry = `${new Date().toISOString()} - ${message} \n`
   fs.appendFileSync(logFilePath, logEntry)
 }
 
 // require('electron-reload')(__dirname, {
-//   electron: require(`${__dirname}/node_modules/electron`)
+//   electron: require(`${ __dirname } /node_modules/electron`)
 // });
 
 import express from 'express'
@@ -478,7 +507,7 @@ appExpress.get('/company-names', (req, res) => {
   })
 
   companyNames.forEach((companyName) => {
-    res.write(`data: ${companyName}\n\n`);
+    res.write(`data: ${companyName} \n\n`);
   });
 
   fs.watch(path.resolve(config.outputDir, 'JD'), (eventType, filename) => {
@@ -487,7 +516,7 @@ appExpress.get('/company-names', (req, res) => {
 
       if (!companyNames.includes(companyName)) {
         companyNames.push(companyName)
-        res.write(`data: ${companyName}\n\n`);
+        res.write(`data: ${companyName} \n\n`);
         mainWindow.webContents.send('message', {
           id: uuidv4(),
           text: 'New company name found : ' + companyName,
@@ -499,5 +528,5 @@ appExpress.get('/company-names', (req, res) => {
 });
 
 appExpress.listen(port, () => {
-  console.log(`Server running on port ${port}`)
+  console.log(`Server running on port ${port} `)
 })

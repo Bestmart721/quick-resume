@@ -97,9 +97,9 @@ function App(): JSX.Element {
               }}
             >
               {log.ip && <span className='ip'>{log.ip}:</span>}
-              {log.text}
+              <div dangerouslySetInnerHTML={{ __html: log.text }} />
               {
-                log.type?.includes('same-company') && !log.type?.includes('-remote') && <div className='confirmProceed'>
+                log.type?.includes('with-issue') && !log.type?.includes('-remote') && <div className='confirmProceed'>
                   <button className='btn'
                     onClick={() => {
                       window.electron.ipcRenderer.send('proceed', log.id, true)
